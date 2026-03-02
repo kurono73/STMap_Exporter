@@ -1,7 +1,5 @@
 # STMap Exporter
 
-https://extensions.blender.org/add-ons/stmap-exporter/
-
 ## Overview
 
 **STMap Exporter** is a Blender extension that exports camera lens distortion data from the Movie Clip Editor as STMap images.
