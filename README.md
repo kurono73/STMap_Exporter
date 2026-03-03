@@ -1,6 +1,7 @@
 # STMap Exporter
 
-This is a stripped-down version of Cupy (GPU Acceleration) for public release. Compatible versions can be found here.
+This is the public release version of Extensions with the Cupy (GPU Acceleration) feature removed.
+The GPU Acceleration-enabled version can be found here.
 https://github.com/kurono73/STMap_Exporter_Gpu
 
 ## Overview
