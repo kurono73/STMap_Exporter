@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "stmap_exporter"
-version = "1.0.0"
+version = "1.1.0"
 name = "STMap Exporter"
 tagline = "STMap Exporter for All Distortion Models"
 maintainer = "Naoki Korematsu" 

@@ -8,35 +8,8 @@ import bpy
 import os
 import re
 import sys
-import subprocess
 import numpy as np
 import bl_operators
-
-# ------------------------------------------------------------------------
-# GPU Support (Optional CuPy)
-# ------------------------------------------------------------------------
-
-GPU_AVAILABLE = False
-try:
-    import cupy as cp
-    GPU_AVAILABLE = True
-    GPU_ERROR = None
-except ImportError:
-    cp = None
-    GPU_ERROR = "CuPy not installed."
-except Exception as e:
-    cp = None
-    GPU_ERROR = f"CuPy error: {str(e)}"
-
-def get_compute_module(use_gpu=False):
-    if use_gpu and GPU_AVAILABLE and cp is not None:
-        return cp, True
-    return np, False
-
-def to_cpu(array):
-    if GPU_AVAILABLE and isinstance(array, cp.ndarray):
-        return cp.asnumpy(array)
-    return array
 
 # ------------------------------------------------------------------------
 # Constants
@@ -82,7 +55,7 @@ def get_distortion_params(tracking_cam):
 def is_distortion_zero(params):
     return all(abs(v) < EPSILON_ZERO for v in params.values())
 
-def explicit_nuke_undistort(xd, yd, model, params, xp):
+def explicit_nuke_undistort(xd, yd, model, params):
     rd2 = xd**2 + yd**2
     k1 = params.get('k1', 0.0)
     k2 = params.get('k2', 0.0)
@@ -93,12 +66,12 @@ def explicit_nuke_undistort(xd, yd, model, params, xp):
     denom_x = radial + p1 * (yd**2)
     denom_y = radial + p2 * (xd**2)
     
-    denom_x = xp.where(xp.abs(denom_x) < EPSILON_DENOM, EPSILON_DENOM, denom_x)
-    denom_y = xp.where(xp.abs(denom_y) < EPSILON_DENOM, EPSILON_DENOM, denom_y)
+    denom_x = np.where(np.abs(denom_x) < EPSILON_DENOM, EPSILON_DENOM, denom_x)
+    denom_y = np.where(np.abs(denom_y) < EPSILON_DENOM, EPSILON_DENOM, denom_y)
     
     return xd / denom_x, yd / denom_y
 
-def explicit_poly_brown_div_distort(xu, yu, model, params, xp):
+def explicit_poly_brown_div_distort(xu, yu, model, params):
     ru2 = xu**2 + yu**2
     
     if model == 'POLYNOMIAL':
@@ -112,7 +85,7 @@ def explicit_poly_brown_div_distort(xu, yu, model, params, xp):
         k1 = params.get('k1', 0.0)
         k2 = params.get('k2', 0.0)
         denom = 1.0 + k1 * ru2 + k2 * (ru2**2)
-        denom = xp.where(xp.abs(denom) < EPSILON_DENOM, EPSILON_DENOM, denom)
+        denom = np.where(np.abs(denom) < EPSILON_DENOM, EPSILON_DENOM, denom)
         return xu / denom, yu / denom
         
     elif model == 'BROWN':
@@ -130,61 +103,53 @@ def explicit_poly_brown_div_distort(xu, yu, model, params, xp):
     
     return xu, yu
 
-def newton_inverse(target_x, target_y, func, model, params, xp, iters=NEWTON_ITERATIONS):
-    x_est = xp.copy(target_x)
-    y_est = xp.copy(target_y)
+def newton_inverse(target_x, target_y, func, model, params, iters=NEWTON_ITERATIONS):
+    x_est = np.copy(target_x)
+    y_est = np.copy(target_y)
     eps = NEWTON_EPSILON
     
     for _ in range(iters):
-        fx, fy = func(x_est, y_est, model, params, xp)
+        fx, fy = func(x_est, y_est, model, params)
         ex = fx - target_x
         ey = fy - target_y
         
-        fx_x, fy_x = func(x_est + eps, y_est, model, params, xp)
+        fx_x, fy_x = func(x_est + eps, y_est, model, params)
         Jxx = (fx_x - fx) / eps
         Jyx = (fy_x - fy) / eps
         
-        fx_y, fy_y = func(x_est, y_est + eps, model, params, xp)
+        fx_y, fy_y = func(x_est, y_est + eps, model, params)
         Jxy = (fx_y - fx) / eps
         Jyy = (fy_y - fy) / eps
         
         det = Jxx * Jyy - Jxy * Jyx
-        det = xp.where(xp.abs(det) < EPSILON_DENOM, xp.copysign(EPSILON_DENOM, det), det)
+        det = np.where(np.abs(det) < EPSILON_DENOM, np.copysign(EPSILON_DENOM, det), det)
         
         x_est -= (Jyy * ex - Jxy * ey) / det
         y_est -= (-Jyx * ex + Jxx * ey) / det
     
     return x_est, y_est
 
-def calc_distortion(xu, yu, model, params, use_gpu=False):
-    xp, is_gpu = get_compute_module(use_gpu)
-    if is_gpu:
-        xu, yu = cp.asarray(xu), cp.asarray(yu)
-    
+def calc_distortion(xu, yu, model, params):
     if model == 'NUKE':
-        res = newton_inverse(xu, yu, explicit_nuke_undistort, model, params, xp)
+        res = newton_inverse(xu, yu, explicit_nuke_undistort, model, params)
     else:
-        res = explicit_poly_brown_div_distort(xu, yu, model, params, xp)
+        res = explicit_poly_brown_div_distort(xu, yu, model, params)
         
-    return (to_cpu(res[0]), to_cpu(res[1])) if is_gpu else res
+    return res
 
-def calc_undistortion(xd, yd, model, params, use_gpu=False):
-    xp, is_gpu = get_compute_module(use_gpu)
-    if is_gpu:
-        xd, yd = cp.asarray(xd), cp.asarray(yd)
-    
+def calc_undistortion(xd, yd, model, params):
     if model == 'NUKE':
-        res = explicit_nuke_undistort(xd, yd, model, params, xp)
+        res = explicit_nuke_undistort(xd, yd, model, params)
     else:
-        res = newton_inverse(xd, yd, explicit_poly_brown_div_distort, model, params, xp)
+        res = newton_inverse(xd, yd, explicit_poly_brown_div_distort, model, params)
         
-    return (to_cpu(res[0]), to_cpu(res[1])) if is_gpu else res
+    return res
 
 # ------------------------------------------------------------------------
 # Utilities
 # ------------------------------------------------------------------------
 
-def estimate_auto_bbox(base_w, base_h, cx, cy, fx_math, fy_math, model, params, use_gpu=False):
+def estimate_auto_bbox(base_w, base_h, cx, cy, fx_math, fy_math, model, params):
     samples = 100
     xs_edge = np.concatenate([
         np.linspace(0, base_w, samples), np.linspace(0, base_w, samples),
@@ -197,7 +162,7 @@ def estimate_auto_bbox(base_w, base_h, cx, cy, fx_math, fy_math, model, params, 
     
     xd_n = (xs_edge - cx) / fx_math
     yd_n = (ys_edge - cy) / fy_math
-    xu_n, yu_n = calc_undistortion(xd_n, yd_n, model, params, use_gpu)
+    xu_n, yu_n = calc_undistortion(xd_n, yd_n, model, params)
     
     xu_px = xu_n * fx_math + cx
     yu_px = yu_n * fy_math + cy
@@ -219,24 +184,28 @@ def calculate_overscan_dimensions(context, props, clip):
     model, params = get_distortion_params(tracking_cam)
     distortion_is_zero = is_distortion_zero(params)
     
-    orig_w = float(clip.size[0])
-    orig_h = float(clip.size[1])
-    
+    orig_w, orig_h = float(clip.size[0]), float(clip.size[1])
     base_w = float(props.custom_res_x) if props.use_custom_resolution else orig_w
     base_h = float(props.custom_res_y) if props.use_custom_resolution else orig_h
     
     scale_x = base_w / orig_w
     scale_y = base_h / orig_h
     
-    pr_x = float(getattr(tracking_cam, 'principal', [0.0, 0.0])[0]) * scale_x
-    pr_y = float(getattr(tracking_cam, 'principal', [0.0, 0.0])[1]) * scale_y
-    cx = base_w / 2.0 + pr_x
-    cy = base_h / 2.0 + pr_y
-    
     cam_sensor_base = float(tracking_cam.sensor_width)
-    focal_px = float(tracking_cam.focal_length) * (orig_w / cam_sensor_base)
     pixel_aspect = float(getattr(tracking_cam, 'pixel_aspect', 1.0))
     
+    focal_px = float(tracking_cam.focal_length) * (orig_w / cam_sensor_base) if cam_sensor_base > 0 else 0.0
+
+    pp = getattr(tracking_cam, 'principal_point', [0.0, 0.0])
+    pr_x_px = (pp[0] * orig_w) / 2.0
+    pr_y_px = (pp[1] * orig_w) / 2.0
+    
+    pr_x = pr_x_px * scale_x
+    pr_y = pr_y_px * scale_y
+    
+    cx = base_w / 2.0 + pr_x
+    cy = base_h / 2.0 + pr_y
+
     if model == 'NUKE':
         fx_math = base_w / 2.0
         fy_math = (base_w / 2.0) / pixel_aspect
@@ -244,12 +213,10 @@ def calculate_overscan_dimensions(context, props, clip):
         fx_math = focal_px * scale_x
         fy_math = (focal_px / pixel_aspect) * scale_y
         
-    use_gpu = props.use_gpu and GPU_AVAILABLE
-    
     min_x_auto, max_x_auto, min_y_auto, max_y_auto = 0, int(base_w), 0, int(base_h)
     if not distortion_is_zero:
         min_x_auto, max_x_auto, min_y_auto, max_y_auto = estimate_auto_bbox(
-            base_w, base_h, cx, cy, fx_math, fy_math, model, params, use_gpu
+            base_w, base_h, cx, cy, fx_math, fy_math, model, params
         )
         lim_x = int(base_w * props.max_overscan_percent / 200.0)
         lim_y = int(base_h * props.max_overscan_percent / 200.0)
@@ -294,8 +261,7 @@ def calculate_overscan_dimensions(context, props, clip):
         'model': model, 'params': params,
         'distortion_is_zero': distortion_is_zero,
         'sensor_width': cam_sensor_base,
-        'os_sensor_width': os_sensor_width,
-        'use_gpu': use_gpu
+        'os_sensor_width': os_sensor_width
     }
 
 def get_clean_clip_name(clip_name):
@@ -435,7 +401,7 @@ class STMapExporterProperties(bpy.types.PropertyGroup):
         name="Checkerboard Guides", description="Export grayscale checkerboard grids to visualize the distortion effect", default=False
     )
     grid_count: bpy.props.IntProperty(
-        name="Grid Count (X)", description="Number of checker squares along the image width", default=16, min=2, max=128
+        name="Grid Count (X)", description="Number of checker squares along the image width", default=25, min=2, max=128
     )
     
     use_custom_resolution: bpy.props.BoolProperty(
@@ -507,65 +473,11 @@ class STMapExporterProperties(bpy.types.PropertyGroup):
         default=False
     )
     
-    show_options: bpy.props.BoolProperty(name="Options", description="Show advanced format and performance settings", default=False)
-    use_gpu: bpy.props.BoolProperty(
-        name="Use GPU Acceleration", description="Use CUDA GPU for much faster calculations. Falls back to CPU if unavailable", default=GPU_AVAILABLE
-    )
-    cuda_version: bpy.props.EnumProperty(
-        name="CUDA Version", description="Select your NVIDIA driver's CUDA version for CuPy installation",
-        items=[('AUTO', "Auto Detect", "Automatically detect CUDA version using nvidia-smi"),
-               ('11x', "CUDA 11.x", "For older NVIDIA drivers"),
-               ('12x', "CUDA 12.x", "For current NVIDIA drivers"),
-               ('13x', "CUDA 13.x", "For newer NVIDIA drivers")],
-        default='AUTO'
-    )
+    show_options: bpy.props.BoolProperty(name="Options", description="Show advanced format settings", default=False)
 
 # ------------------------------------------------------------------------
 # Operators
 # ------------------------------------------------------------------------
-
-class STMAP_OT_install_cupy(bpy.types.Operator):
-    bl_idname = "stmap.install_cupy"
-    bl_label = "Install CuPy"
-    
-    def detect_cuda_version(self):
-        try:
-            res = subprocess.run(['nvidia-smi'], capture_output=True, text=True, timeout=5)
-            if res.returncode == 0:
-                match = re.search(r"CUDA Version:\s*(\d+)", res.stdout)
-                if match: return f"{match.group(1)}x"
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-        return None
-
-    def execute(self, context):
-        props = context.scene.stmap_exporter_props
-        target_version = props.cuda_version
-        
-        if target_version == 'AUTO':
-            self.report({'INFO'}, "Detecting NVIDIA GPU and CUDA version...")
-            detected = self.detect_cuda_version()
-            if not detected:
-                self.report({'ERROR'}, "Failed to detect GPU. Please select CUDA version manually.")
-                return {'CANCELLED'}
-            target_version = detected
-            self.report({'INFO'}, f"Detected CUDA {target_version.replace('x', '.x')}")
-
-        pkg_name = f"cupy-cuda{target_version}"
-        self.report({'INFO'}, f"Installing {pkg_name}... Blender will freeze. Please wait.")
-        
-        try:
-            subprocess.run([sys.executable, "-m", "pip", "install", pkg_name], check=True, capture_output=True, text=True)
-            self.report({'INFO'}, f"{pkg_name} installed successfully! Please restart Blender.")
-            return {'FINISHED'}
-        except subprocess.CalledProcessError as e:
-            err = e.stderr[-200:] if e.stderr else "Unknown pip error"
-            self.report({'ERROR'}, f"Failed to install {pkg_name}: {err}")
-            return {'CANCELLED'}
-        except Exception as e:
-            self.report({'ERROR'}, f"Error: {str(e)}")
-            return {'CANCELLED'}
-
 
 class STMAP_OT_reset_custom_res(bpy.types.Operator):
     bl_idname = "stmap.reset_custom_res"
@@ -681,9 +593,6 @@ class STMAP_OT_export(bpy.types.Operator):
         start_time = time.time()
         
         props = context.scene.stmap_exporter_props
-        if props.use_gpu and not GPU_AVAILABLE:
-            self.report({'WARNING'}, f"GPU unavailable: {GPU_ERROR}. Using CPU.")
-            props.use_gpu = False
             
         ep = self.prepare_export_parameters(context)
         if not ep: return {'CANCELLED'}
@@ -691,7 +600,7 @@ class STMAP_OT_export(bpy.types.Operator):
         results = self.execute_export(ep, context)
         
         elapsed = time.time() - start_time
-        self.report_results(results, ep['distortion_is_zero'], elapsed, ep['use_gpu'])
+        self.report_results(results, ep['distortion_is_zero'], elapsed)
         return {'FINISHED'}
     
     def prepare_export_parameters(self, context):
@@ -754,9 +663,9 @@ class STMAP_OT_export(bpy.types.Operator):
         yn = (ys + min_y + 0.5 - ep['cy']) / ep['fy_math']
         
         if is_undistort:
-            x_res, y_res = calc_distortion(xn, yn, ep['model'], ep['params'], ep['use_gpu'])
+            x_res, y_res = calc_distortion(xn, yn, ep['model'], ep['params'])
         else:
-            x_res, y_res = calc_undistortion(xn, yn, ep['model'], ep['params'], ep['use_gpu'])
+            x_res, y_res = calc_undistortion(xn, yn, ep['model'], ep['params'])
             
         px = x_res * ep['fx_math'] + ep['cx']
         py = y_res * ep['fy_math'] + ep['cy']
@@ -794,7 +703,7 @@ class STMAP_OT_export(bpy.types.Operator):
         xn = (xs + 0.5 - ep['cx']) / ep['fx_math']
         yn = (ys + 0.5 - ep['cy']) / ep['fy_math']
         
-        xu, yu = calc_undistortion(xn, yn, ep['model'], ep['params'], ep['use_gpu'])
+        xu, yu = calc_undistortion(xn, yn, ep['model'], ep['params'])
         px, py = xu * ep['fx_math'] + ep['cx'], yu * ep['fy_math'] + ep['cy']
         
         map_x = np.clip(np.floor(px - ep['min_x']).astype(int), 0, ep['out_w'] - 1)
@@ -802,9 +711,9 @@ class STMAP_OT_export(bpy.types.Operator):
         
         self.save_png(os.path.join(ep['output_dir'], f"{ep['prefix']}_Grid_Distorted.png"), chk[map_y, map_x], base_w_int, base_h_int)
 
-    def report_results(self, msgs, is_zero, elapsed, use_gpu):
+    def report_results(self, msgs, is_zero, elapsed):
         if msgs:
-            msg = f"Exported: {', '.join(msgs)} [{'GPU' if use_gpu else 'CPU'}, {elapsed:.2f}s]"
+            msg = f"Exported: {', '.join(msgs)} [CPU, {elapsed:.2f}s]"
             if is_zero: msg += " (Zero distortion)"
             self.report({'WARNING' if is_zero else 'INFO'}, msg)
         else:
@@ -880,8 +789,7 @@ class STMAP_OT_add_preset(bl_operators.presets.AddPresetBase, bpy.types.Operator
         "props.exr_depth",
         "props.exr_codec",
         "props.std_depth",
-        "props.remap_bbox",
-        "props.use_gpu"
+        "props.remap_bbox"
     ]
     preset_subdir = "stmap_exporter"
 
@@ -1047,21 +955,6 @@ class STMAP_PT_main_panel(bpy.types.Panel):
             col = box.column(align=True)
             
             col.separator()
-            col.label(text="Performance:")
-            perf_box = col.box()
-            perf_box.prop(props, "use_gpu")
-            
-            if props.use_gpu and not GPU_AVAILABLE:
-                perf_box.separator()
-                perf_box.label(text="CuPy is not installed.", icon='INFO')
-                perf_box.prop(props, "cuda_version")
-                perf_box.operator("stmap.install_cupy", icon='IMPORT', text=f"Install CuPy ({props.cuda_version})")
-                n = perf_box.column()
-                n.scale_y = 0.8
-                n.label(text="* Requires NVIDIA GPU", icon='ERROR')
-                n.label(text="* Blender will freeze during install")
-                
-            col.separator()
             col.label(text="Format Settings:")
             fb = col.box()
             fb.prop(props, "file_format")
@@ -1080,7 +973,6 @@ class STMAP_PT_main_panel(bpy.types.Panel):
 
 classes = (
     STMapExporterProperties,
-    STMAP_OT_install_cupy,
     STMAP_OT_reset_custom_res,
     STMAP_OT_copy_clipboard,
     STMAP_OT_apply_overscan,
