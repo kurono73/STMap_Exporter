@@ -11,7 +11,6 @@ It accurately calculates Blender's internal distortion models (Polynomial, Divis
 * **Pixel-Perfect Math**: Faithfully replicates Blender's internal normalization scales, principal point shifts, and asymmetric aspect ratios, completely eliminating the visual mismatch commonly found between Blender and compositors.
 * **Advanced Overscan Control**: Choose between Auto BBox expansion based on the distortion curve, or set a Custom resolution to align exactly with your CG overscan pipelines.
 * **Scene Integration**: One-click operators to apply the calculated overscan resolution to your Scene render settings and automatically scale the active Camera's sensor width to maintain the exact field of view.
-* **GPU Acceleration**: Includes a 1-click, built-in installer for CuPy (CUDA), enabling massive performance boosts for high-resolution STMap generation using your NVIDIA GPU. *(Requires a one-time initial setup and a Blender restart).*
 * **Preset System**: Save and load your favorite configurations directly from the standard Blender panel header.
 
 ## How to Use
@@ -58,12 +57,6 @@ It accurately calculates Blender's internal distortion models (Polynomial, Divis
 * **Restore**: Reverts the Scene Render resolution and Camera Sensor Width back to the original values.
 
 ### Options
-
-#### Performance
-
-* **Use GPU Acceleration**: Utilizes your NVIDIA GPU (CUDA) for significantly faster calculations. If unavailable, it safely falls back to CPU processing. *(Note: The GPU acceleration feature and the automated CuPy installer have currently only been tested on Windows. macOS does not support CUDA).*
-* **Install CuPy / CUDA Version**: If CuPy is not installed, a button will appear to automatically install it via pip in the background. Leave the version on **Auto Detect** to let the add-on find the correct CUDA version for your NVIDIA drivers. *(Note: Blender UI will freeze for 1-2 minutes during installation. **You must restart Blender after the installation is complete** to enable GPU acceleration).*
-
 
 #### Format Settings
 
