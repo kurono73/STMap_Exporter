@@ -1,5 +1,8 @@
 # STMap Exporter
 
+This is a stripped-down version of Cupy (GPU Acceleration) for public release. Compatible versions can be found here.
+https://github.com/kurono73/STMap_Exporter_Gpu
+
 ## Overview
 
 **STMap Exporter** is a Blender extension that exports camera lens distortion data from the Movie Clip Editor as STMap images.
