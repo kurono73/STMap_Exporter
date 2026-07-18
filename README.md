@@ -14,7 +14,7 @@ It accurately calculates Blender's internal distortion models (Polynomial, Divis
 
 * **Pixel-Perfect Math**: Faithfully replicates Blender's internal normalization scales, principal point shifts, and asymmetric aspect ratios, completely eliminating the visual mismatch commonly found between Blender and compositors.
 * **Advanced Overscan Control**: Choose between Auto BBox expansion based on the distortion curve, or set a Custom resolution to align exactly with your CG overscan pipelines.
-* **Supports BBox-aware EXR export by writing dataWindow/displayWindow metadata, allowing overscan STMaps to preserve their correct image bounds in compatible compositing tools.
+* **BBox-Aware EXR Export**: Supports BBox-aware EXR export by writing dataWindow/displayWindow metadata, allowing overscan STMaps to preserve their correct image bounds in compatible compositing tools.
 * **Scene Integration**: One-click operators to apply the calculated overscan resolution to your Scene render settings and automatically scale the active Camera's sensor width to maintain the exact field of view.
 * **Preset System**: Save and load your favorite configurations directly from the standard Blender panel header.
 
